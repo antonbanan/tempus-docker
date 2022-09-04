@@ -1,0 +1,234 @@
+version: "3.3"
+
+networks:
+  web: null
+
+  local:
+    ipam:
+      config:
+      - subnet: 172.24.0.0/24
+
+volumes:
+  pgdata:
+
+services:
+  ################################################
+  ####        Traefik Proxy Setup           #####
+  ###############################################
+  traefik:
+    image: traefik:v2.0
+    restart: always
+    container_name: traefik
+    ports:
+      - "80:80" # <== http
+      - "8080:8080" # <== :8080 is where the dashboard runs on
+      - "443:443" # <== https
+      # - "21:21" # <== ftp
+      # - "${API_PORT}:${API_PORT}" # <== api port
+    command:
+    #### These are the CLI commands that will configure Traefik and tell it how to work! ####
+      ## API Settings - https://docs.traefik.io/operations/api/, endpoints - https://docs.traefik.io/operations/api/#endpoints ##
+      - --api.insecure=true # <== Enabling insecure api, NOT RECOMMENDED FOR PRODUCTION
+      - --api.dashboard=true # <== Enabling the dashboard to view services, middlewares, routers, etc...
+      - --api.debug=true # <== Enabling additional endpoints for debugging and profiling
+      ## Log Settings (options: ERROR, DEBUG, PANIC, FATAL, WARN, INFO) - https://docs.traefik.io/observability/logs/ ##
+      - --log.level=DEBUG # <== Setting the level of the logs from traefik
+      ## Provider Settings - https://docs.traefik.io/providers/docker/#provider-configuration ##
+      - --providers.docker=true # <== Enabling docker as the provider for traefik
+      - --providers.docker.exposedbydefault=false # <== Don't expose every container to traefik, only expose enabled ones
+      - --providers.file.filename=/dynamic.yaml # <== Referring to a dynamic configuration file
+      - --providers.docker.network=${DOCKER_COMPOSE_DIR_NAME}_web # <== Operate on the docker network named web (traefic network)
+      ## Entrypoints Settings - https://docs.traefik.io/routing/entrypoints/#configuration ##
+      - --entrypoints.web.address=:80 # <== Defining an entrypoint for port :80 named web
+      - --entrypoints.web-secured.address=:443 # <== Defining an entrypoint for https on port :443 named web-secured
+      # - --entrypoints.ftp.address=:21 # <== Defining an entrypoint for ftp on port :21 named ftp
+      # - --entrypoints.api-secured.address=:${API_PORT} # <== Defining an entrypoint for https on port :3200 named api-secured
+      ## Certificate Settings (Let's Encrypt) -  https://docs.traefik.io/https/acme/#configuration-examples ##
+      - --certificatesresolvers.mytlschallenge.acme.tlschallenge=true # <== Enable TLS-ALPN-01 to generate and renew ACME certs
+      - --certificatesresolvers.mytlschallenge.acme.email=${ACME_MAIL} # <== Setting email for certs
+      - --certificatesresolvers.mytlschallenge.acme.storage=/letsencrypt/acme.json # <== Defining acme file to store cert information
+    volumes:
+      - ./letsencrypt:/letsencrypt # <== Volume for certs (TLS)
+      - /var/run/docker.sock:/var/run/docker.sock # <== Volume for docker admin
+      - ./dynamic.yaml:/dynamic.yaml # <== Volume for dynamic conf file, **ref: line 27
+    networks:
+      - web # <== Placing traefik on the network named web, to access containers on this network
+    labels:
+    #### Labels define the behavior and rules of the traefik proxy for this container ####
+      - "traefik.enable=true" # <== Enable traefik on itself to view dashboard and assign subdomain to view it
+      - "traefik.http.routers.api.rule=Host(`monitor.${DOMAIN}`)" # <== Setting the domain for the dashboard
+      - "traefik.http.routers.api.service=api@internal" # <== Enabling the api to be a service to access
+
+  #########################################################
+  ###         Site Setup Container  use traefic       #####
+  #########################################################
+
+  frontend: #frontend server
+    container_name: frontend
+    build: 
+      context: .
+      dockerfile: front-Dockerfile
+    networks:
+      web: null
+      local:
+        ipv4_address: 172.24.0.7
+    labels:
+      #### Labels define the behavior and rules of the traefik proxy for this container ####
+      - "traefik.enable=true" # <== Enable traefik to proxy this container
+      - "traefik.docker.network=${DOCKER_COMPOSE_DIR_NAME}_web" # nazvanie seti traefic + nazvanie papki proekta
+      - "traefik.http.routers.nginx-web.rule=Host(`app.${DOMAIN}`)" # <== Your Domain Name goes here for the http rule
+      - "traefik.http.routers.nginx-web.entrypoints=web" # <== Defining the entrypoint for http, **ref: line 30
+      
+      # create redirect-https middleware via label
+      - "traefik.http.middlewares.redirect-https.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.redirect-https.redirectscheme.permanent=true"
+      # set redirect-https middleware to api-http router. @docker suffix is optional, as @file it just points to the source of configuration (can be docker label, file, k8s, etc)
+      - "traefik.http.routers.nginx-web.middlewares=redirect-https@docker"      
+      
+      - "traefik.http.routers.nginx-secured.rule=Host(`app.${DOMAIN}`)" # <== Your Domain Name for the https rule 
+      - "traefik.http.routers.nginx-secured.entrypoints=web-secured" # <== Defining entrypoint for https, **ref: line 31
+      - "traefik.http.routers.nginx-secured.tls.certresolver=mytlschallenge" # <== Defining certsresolvers for https
+  
+  backend: #backend server
+    container_name: backend
+    build:
+      context: .
+      dockerfile: back-Dockerfile
+    environment:
+      - NODE_ENV=production
+    ports:
+      - "${API_PORT}:${API_PORT}"
+    networks:
+      web: null
+      local:
+        ipv4_address: 172.24.0.12
+    labels:
+      #### Labels define the behavior and rules of the traefik proxy for this container ####
+      - "traefik.enable=true" # <== Enable traefik to proxy this container
+      - "traefik.docker.network=${DOCKER_COMPOSE_DIR_NAME}_web" # nazvanie seti traefic + nazvanie papki proekta!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+      - "traefik.http.routers.api-web.rule=Host(`api.${DOMAIN}`)" # <== Your Domain Name goes here for the http rule
+      - "traefik.http.routers.api-web.entrypoints=web-secured" # <== Defining the entrypoint for http, **ref: line 30
+      - "traefik.http.routers.api-web.tls.certresolver=mytlschallenge" # <== Defining certsresolvers for https
+
+  # ftp:
+  #   image: stilliard/pure-ftpd
+  #   container_name: ftp
+  #   ports:
+  #     # - target: 21
+  #     #   protocol: tcp
+  #     #   mode: ingress
+      
+  #     # - "21:21"
+  #     # - "30000-30009:30000-30009"
+
+  #     - target: 21
+  #       # published: 21
+  #       mode: host
+  #     - "30000-30009"
+  #   volumes: 
+  #     - ./ftpdata/data:/home/${FTP_USER_SYSTEM}
+  #     - ./ftpdata/passwd:/etc/pure-ftpd/passwd
+  #   environment:
+  #     # PUBLICHOST: "ftp.localhost"
+  #     # PUBLICHOST: "ftp.${DOMAIN}"
+  #     FTP_USER_NAME: ${FTP_USER_SYSTEM}
+  #     FTP_USER_PASS: ${FTP_PASS_SYSTEM}
+  #     FTP_USER_HOME: /home/${FTP_USER_SYSTEM}
+  #   restart: always
+  #   networks:
+  #     web: null
+  #     local:
+  #       ipv4_address: 172.24.0.13
+  #   labels:
+  #     - "traefik.enable=true" # <== Enable traefik to proxy this container
+  #     - "traefik.docker.network=${DOCKER_COMPOSE_DIR_NAME}_web" # nazvanie seti traefic + nazvanie papki proekta
+  #     - "traefik.protocol=tcp"
+  #     - "traefik.tcp.routers.ftphost.rule=HostSNI(`ftp.${DOMAIN}`)"
+  #     # - "traefik.tcp.routers.ftphost.rule=HostSNI(`*`)"
+  #     - "traefik.tcp.routers.ftphost.entrypoints=ftp" # <== Defining entrypoint for https, **ref: line 31
+  #     # - "traefik.tcp.routers.ftphost.rule=Host(`ftp.${DOMAIN}`)" # <== Your Domain Name goes here for the http rule
+  #     - "traefik.tcp.routers.ftphost.service=ftphost-svc"
+  #     - "traefik.tcp.services.ftphost-svc.loadbalancer.server.port=21"
+  #     # - "traefik.tcp.routers.ftphost.entrypoints=web" # <== Defining the entrypoint for http, **ref: line 30
+
+     
+
+ #############################################
+ ###     DB Container not on traefik      ####
+ #############################################
+  db:
+    container_name: ${APP_NAME}-db
+    image: postgres:14.3-alpine
+    restart: always
+    environment:
+      POSTGRES_DB: ${POSTGRES_DATABASE}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - '5432:${POSTGRES_PORT}'
+      # - '5432:5432'
+    networks:
+      web: null
+      local:
+        ipv4_address: 172.24.0.10
+    volumes:
+      - pgdata:/var/lib/postgresql/data/
+    # labels:
+    #   - "traefik.enable=true" # <== Enable traefik to proxy this container
+    #   - "traefik.docker.network=${DOCKER_COMPOSE_DIR_NAME}_web" # nazvanie seti traefic + nazvanie papki proekta
+    #   - "traefik.http.routers.api-db.rule=Host(`db.${DOMAIN}`)" # <== Your Domain Name goes here for the http rule
+    #   - "traefik.http.routers.api-db.entrypoints=web" # <== Defining the entrypoint for http, **ref: line 30
+  
+  # pgadmin:
+  #   container_name: pgadmin4-${APP_NAME}
+  #   image: dpage/pgadmin4
+  #   restart: always
+  #   environment:
+  #     PGADMIN_DEFAULT_EMAIL: admin@admin.com
+  #     PGADMIN_DEFAULT_PASSWORD: root
+  #   # ports:
+  #   #   - "5050:8080"
+  #   networks:
+  #     web: null
+  #     local:
+  #       ipv4_address: 172.24.0.11
+  #   labels:
+  #     - "traefik.enable=true" # <== Enable traefik to proxy this container
+  #     - "traefik.docker.network=${DOCKER_COMPOSE_DIR_NAME}_web" # nazvanie seti traefic + nazvanie papki proekta
+  #     - "traefik.http.routers.api-pg.rule=Host(`pg.${DOMAIN}`)" # <== Your Domain Name goes here for the http rule
+  #     - "traefik.http.routers.api-pg.entrypoints=web" # <== Defining the entrypoint for http, **ref: line 30
+
+    
+  # mailserver:
+  #   container_name: mailserver
+  #   image: docker.io/mailserver/docker-mailserver
+  #   # If the FQDN for your mail-server is only two labels (eg: example.com),
+  #   # you can assign this entirely to `hostname` and remove `domainname`.
+  #   hostname: mail
+  #   domainname: example.com
+  #   env_file: mail.env
+  #   # More information about the mail-server ports:
+  #   # https://docker-mailserver.github.io/docker-mailserver/edge/config/security/understanding-the-ports/
+  #   # To avoid conflicts with yaml base-60 float, DO NOT remove the quotation marks.
+  #   ports:
+  #     - "25:25"    # SMTP  (explicit TLS => STARTTLS)
+  #     - "143:143"  # IMAP4 (explicit TLS => STARTTLS)
+  #     - "465:465"  # ESMTP (implicit TLS)
+  #     - "587:587"  # ESMTP (explicit TLS => STARTTLS)
+  #     - "993:993"  # IMAP4 (implicit TLS)
+  #   networks:
+  #     web: null
+  #   volumes:
+  #     - ./docker-data/dms/mail-data/:/var/mail/
+  #     - ./docker-data/dms/mail-state/:/var/mail-state/
+  #     - ./docker-data/dms/mail-logs/:/var/log/mail/
+  #     - ./docker-data/dms/config/:/tmp/docker-mailserver/
+  #     - /etc/localtime:/etc/localtime:ro
+  #   restart: always
+  #   stop_grace_period: 1m
+  #   cap_add:
+  #     - NET_ADMIN
+  #   healthcheck:
+  #     test: "ss --listening --tcp | grep -P 'LISTEN.+:smtp' || exit 1"
+  #     timeout: 3s
+  #     retries: 0

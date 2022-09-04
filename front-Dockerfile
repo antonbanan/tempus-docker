@@ -1,0 +1,32 @@
+FROM node:12.18 as banan-build
+
+
+RUN npm install npm@8.15
+
+RUN apt-get update
+
+RUN apt-get install -y git
+
+RUN git clone -b  add-gulp-build https://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@github.com/rodan888/tempus.git
+# RUN git clone -b master https://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@github.com/rodan888/tempus.git
+
+WORKDIR /tempus
+COPY nginx.conf nginx.conf
+
+RUN npm cache clear --force && npm install --no-shrinkwrap --update-binary
+
+RUN npm install -g gulp
+# RUN npm install --save-dev gulp
+RUN npm install
+RUN npm audit fix
+
+RUN gulp build
+
+FROM nginx
+COPY --from=banan-build /tempus/app /usr/share/nginx/html
+
+
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+EXPOSE 80
+EXPOSE 443
