@@ -4,7 +4,7 @@ FROM node:14 AS builder
 RUN apt-get update
 RUN apt-get install -y git
 
-RUN git clone -b master https://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@github.com/antonbanan/tempus-app.git
+RUN git clone -b master https://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@github.com/antonbanan/tempus-app.git
 COPY /.env /tempus-app/.env
 # переходим в рабочую папку для приложения
 WORKDIR /tempus-app

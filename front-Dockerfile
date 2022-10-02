@@ -7,8 +7,8 @@ RUN apt-get update
 
 RUN apt-get install -y git
 
-RUN git clone -b  add-gulp-build https://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@github.com/rodan888/tempus.git
-# RUN git clone -b master https://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@github.com/rodan888/tempus.git
+# RUN git clone -b  add-gulp-build https://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@github.com/rodan888/tempus.git
+RUN git clone -b master https://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@github.com/rodan888/tempus.git
 
 WORKDIR /tempus
 COPY nginx.conf nginx.conf
