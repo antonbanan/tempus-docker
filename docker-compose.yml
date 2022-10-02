@@ -67,6 +67,8 @@ services:
     container_name: frontend
     build: 
       context: .
+      args:
+        - TOKEN=${ACCESS_TOKEN}
       dockerfile: front-Dockerfile
     networks:
       web: null
@@ -89,26 +91,28 @@ services:
       - "traefik.http.routers.nginx-secured.entrypoints=web-secured" # <== Defining entrypoint for https, **ref: line 31
       - "traefik.http.routers.nginx-secured.tls.certresolver=mytlschallenge" # <== Defining certsresolvers for https
   
-  # backend: #backend server
-  #   container_name: backend
-  #   build:
-  #     context: .
-  #     dockerfile: back-Dockerfile
-  #   environment:
-  #     - NODE_ENV=production
-  #   ports:
-  #     - "${API_PORT}:${API_PORT}"
-  #   networks:
-  #     web: null
-  #     local:
-  #       ipv4_address: 172.24.0.12
-  #   labels:
-  #     #### Labels define the behavior and rules of the traefik proxy for this container ####
-  #     - "traefik.enable=true" # <== Enable traefik to proxy this container
-  #     - "traefik.docker.network=${DOCKER_COMPOSE_DIR_NAME}_web" # nazvanie seti traefic + nazvanie papki proekta!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-  #     - "traefik.http.routers.api-web.rule=Host(`api.${DOMAIN}`)" # <== Your Domain Name goes here for the http rule
-  #     - "traefik.http.routers.api-web.entrypoints=web-secured" # <== Defining the entrypoint for http, **ref: line 30
-  #     - "traefik.http.routers.api-web.tls.certresolver=mytlschallenge" # <== Defining certsresolvers for https
+  backend: #backend server
+    container_name: backend
+    build:
+      context: .
+      args:
+        - TOKEN=${ACCESS_TOKEN}
+      dockerfile: back-Dockerfile
+    environment:
+      - NODE_ENV=production
+    ports:
+      - "${API_PORT}:${API_PORT}"
+    networks:
+      web: null
+      local:
+        ipv4_address: 172.24.0.12
+    labels:
+      #### Labels define the behavior and rules of the traefik proxy for this container ####
+      - "traefik.enable=true" # <== Enable traefik to proxy this container
+      - "traefik.docker.network=${DOCKER_COMPOSE_DIR_NAME}_web" # nazvanie seti traefic + nazvanie papki proekta!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+      - "traefik.http.routers.api-web.rule=Host(`api.${DOMAIN}`)" # <== Your Domain Name goes here for the http rule
+      - "traefik.http.routers.api-web.entrypoints=web-secured" # <== Defining the entrypoint for http, **ref: line 30
+      - "traefik.http.routers.api-web.tls.certresolver=mytlschallenge" # <== Defining certsresolvers for https
 
   # ftp:
   #   image: stilliard/pure-ftpd

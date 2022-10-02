@@ -1,14 +1,14 @@
 FROM node:12.18 as banan-build
 
-
 RUN npm install npm@8.15
 
 RUN apt-get update
 
 RUN apt-get install -y git
 
-# RUN git clone -b  add-gulp-build https://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@github.com/rodan888/tempus.git
-RUN git clone -b master https://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@github.com/rodan888/tempus.git
+ARG TOKEN
+# RUN git clone -b  add-gulp-build https://${TOKEN}@github.com/rodan888/tempus.git
+RUN git clone -b master https://${TOKEN}@github.com/rodan888/tempus.git
 
 WORKDIR /tempus
 COPY nginx.conf nginx.conf
