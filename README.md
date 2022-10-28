@@ -19,3 +19,16 @@ to Run use this command in catalog
 ```
 docker-compose up --build
 ```
+===================================================
+
+to stop Runing
+-----------
+```
+docker-compose down --remove-orphans
+```
+
+to remove all build Cash
+-----------
+```
+docker system prune -a
+```
